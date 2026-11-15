@@ -1,0 +1,773 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bengaluru GEM-15 Map</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,500..800&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="config.js"></script>
+<style>
+/* Layout: full-screen map; a field-notebook panel on the left with a contour-printed header band, cards for base map, water and layers (bottom sheet on phones). */
+:root {
+  --bg: #eef1ec; --panel: #f7f9f5; --card: #ffffff; --fg: #18241f; --muted: #5d6c64; --line: #dbe2dc;
+  --accent: #0f6b5c; --accent-fg: #ffffff; --chip: #e9eee9;
+  --band: #0d3b33; --band-fg: #eaf5f0; --band-muted: #a9cbbf;
+  --water: #1279c4; --water-soft: #e3f1fb; --warn: #c2410c;
+  --f-display: "Archivo", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "Instrument Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --shadow: 0 1px 2px rgba(16,40,32,.06), 0 4px 14px rgba(16,40,32,.06);
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #0f1513; --panel: #131b18; --card: #18221e; --fg: #e4ece7; --muted: #95a69d; --line: #26322d;
+    --accent: #4cc2a8; --accent-fg: #062019; --chip: #1f2a26;
+    --band: #0a2a24; --band-fg: #e4f3ec; --band-muted: #8fb8aa; --water: #5ab4f0; --water-soft: #13283a; --warn: #f08a5d;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 4px 14px rgba(0,0,0,.25); color-scheme: dark; }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--fg); font: 14px/1.45 var(--f-body); }
+#map { position: absolute; inset: 0; background: #1b2420; }
+.leaflet-image-layer.px { image-rendering: pixelated; }
+.leaflet-container { font-family: var(--f-body); }
+
+/* ---------- panel ---------- */
+.panel { position: absolute; z-index: 1000; top: 12px; left: 12px; bottom: 12px; width: 368px; display: flex; flex-direction: column;
+  background: var(--panel); border-radius: 14px; box-shadow: 0 10px 40px rgba(0,0,0,.28); overflow: hidden; transition: transform .25s ease; }
+.panel.collapsed { transform: translateX(calc(-100% - 20px)); }
+.scroll { overflow-y: auto; flex: 1; padding: 14px 14px 18px; display: flex; flex-direction: column; gap: 14px; }
+.band { position: relative; background: var(--band); color: var(--band-fg); padding: 18px 18px 16px; overflow: hidden; flex: none; }
+.band svg.topo { position: absolute; inset: 0; width: 100%; height: 100%; opacity: .22; pointer-events: none; }
+.band > * { position: relative; }
+.eyebrow { font: 500 10.5px var(--f-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--band-muted); }
+h1 { font: 800 30px/1 var(--f-display); font-stretch: 115%; margin: 6px 0 8px; letter-spacing: -.01em; }
+h1 span { color: #7fe0c4; }
+.band p { margin: 0; font-size: 12.5px; color: var(--band-muted); max-width: 44ch; }
+.kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 12px; }
+.kpi { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.1); border-radius: 8px; padding: 6px 8px; }
+.kpi b { display: block; font: 500 14.5px var(--f-mono); font-variant-numeric: tabular-nums; }
+.kpi span { font-size: 10.5px; color: var(--band-muted); }
+.collapse-btn { position: absolute; top: 12px; right: 12px; z-index: 2; width: 28px; height: 28px; border-radius: 50%; border: 1px solid rgba(255,255,255,.2);
+  background: rgba(255,255,255,.08); color: var(--band-fg); display: grid; place-items: center; font-size: 14px; }
+.open-btn { position: absolute; z-index: 999; top: 12px; left: 12px; border: 0; background: var(--band); color: var(--band-fg); border-radius: 10px;
+  padding: 9px 12px; font: 600 13px var(--f-body); box-shadow: 0 4px 16px rgba(0,0,0,.3); }
+
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 10px; }
+.card-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+h2 { margin: 0; font: 700 11.5px var(--f-display); letter-spacing: .11em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 7px; }
+h2 i { width: 7px; height: 7px; border-radius: 2px; background: var(--accent); display: inline-block; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.muted { color: var(--muted); font-size: 12px; margin: 0; }
+
+/* base map tiles */
+.bases { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.base { position: relative; border: 2px solid transparent; border-radius: 9px; padding: 0; background: var(--chip); overflow: hidden; text-align: left; }
+.base .thumb { height: 52px; background-size: cover; background-position: center; }
+.base .thumb.g { display: grid; place-items: center; font: 800 20px var(--f-display); color: #fff; }
+.base span { display: block; padding: 4px 6px 5px; font-size: 11.5px; font-weight: 600; line-height: 1.2; }
+.base small { position: absolute; top: 4px; right: 4px; font: 500 9px var(--f-mono); background: rgba(0,0,0,.6); color: #fff; padding: 1px 4px; border-radius: 3px; }
+.base[aria-pressed="true"] { border-color: var(--accent); }
+.base[aria-pressed="true"] span { color: var(--accent); }
+.base.locked .thumb { filter: grayscale(1) opacity(.55); }
+.keyrow { display: flex; gap: 6px; }
+.keyrow input { flex: 1; min-width: 0; font: 12px var(--f-mono); padding: 7px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); color: var(--fg); }
+.keyrow button { border: 0; background: var(--accent); color: var(--accent-fg); border-radius: 7px; padding: 0 12px; font-weight: 600; font-size: 12.5px; }
+
+/* water card */
+.water { background: linear-gradient(180deg, var(--water-soft), var(--card) 70%); border-color: color-mix(in srgb, var(--water) 30%, var(--line)); }
+.water h2 i { background: var(--water); border-radius: 50%; }
+.big { display: flex; align-items: baseline; gap: 8px; }
+.big b { font: 600 30px/1 var(--f-mono); color: var(--water); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.big span { font-size: 12px; color: var(--muted); }
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 3px; background: var(--chip); padding: 3px; border-radius: 8px; }
+.seg button { border: 0; background: transparent; padding: 6px 6px; border-radius: 6px; font-size: 12px; font-weight: 500; }
+.seg button[aria-pressed="true"] { background: var(--card); color: var(--water); box-shadow: 0 1px 3px rgba(0,0,0,.15); font-weight: 600; }
+.wrow { display: flex; align-items: center; gap: 10px; }
+.wrow input[type=range] { flex: 1; accent-color: var(--water); }
+.play { width: 34px; height: 34px; flex: none; border-radius: 50%; border: 0; background: var(--water); color: #fff; display: grid; place-items: center; font-size: 13px; }
+.wstats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.wstats div { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+.wstats b { display: block; font: 500 14px var(--f-mono); font-variant-numeric: tabular-nums; }
+.wstats span { font-size: 10.5px; color: var(--muted); line-height: 1.25; display: block; }
+.busy { font: 11px var(--f-mono); color: var(--water); }
+.seg.three { grid-template-columns: repeat(3, 1fr); }
+.seg.three button { font-size: 11.5px; padding: 6px 4px; line-height: 1.2; }
+.chips { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+.chips button { border: 1px solid color-mix(in srgb, var(--water) 35%, var(--line)); background: var(--card); color: var(--water); border-radius: 7px; padding: 5px 0 4px; font: 600 13px/1.05 var(--f-mono); display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.chips button small { font: 500 9px var(--f-mono); opacity: .75; }
+.chips button[aria-pressed="true"] { background: var(--water); color: #fff; border-color: var(--water); }
+.spark { width: 100%; height: 64px; display: block; }
+.spark text { font: 9.5px var(--f-mono); fill: var(--muted); }
+.tick-row { display: flex; justify-content: space-between; font: 10px var(--f-mono); color: var(--muted); margin-top: -4px; }
+.peak { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.peak input { accent-color: var(--water); margin: 0; }
+
+/* layers */
+.layers { display: flex; flex-direction: column; }
+.layer { border-top: 1px solid var(--line); padding: 9px 0; display: flex; flex-direction: column; gap: 7px; }
+.layer:first-child { border-top: 0; padding-top: 2px; }
+.lh { display: flex; align-items: center; gap: 10px; }
+.sw { width: 28px; height: 18px; border-radius: 5px; flex: none; box-shadow: inset 0 0 0 1px rgba(0,0,0,.08); }
+.lh .nm { flex: 1; min-width: 0; }
+.lh .nm b { display: block; font-weight: 600; font-size: 13px; }
+.lh .nm span { display: block; font-size: 11px; color: var(--muted); }
+.switch { position: relative; width: 36px; height: 20px; flex: none; }
+.switch input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.switch i { position: absolute; inset: 0; border-radius: 20px; background: var(--line); transition: background .15s; pointer-events: none; }
+.switch i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: transform .15s; }
+.switch input:checked + i { background: var(--accent); }
+.water .switch input:checked + i { background: var(--water); }
+.switch input:checked + i::after { transform: translateX(16px); }
+.switch input:focus-visible + i { outline: 2px solid var(--accent); outline-offset: 2px; }
+.detail { padding-left: 38px; display: flex; flex-direction: column; gap: 5px; }
+.op { display: flex; align-items: center; gap: 8px; font: 10.5px var(--f-mono); color: var(--muted); }
+.op input { flex: 1; accent-color: var(--accent); }
+.ramp { height: 8px; border-radius: 3px; }
+.ramp-l { display: flex; justify-content: space-between; font: 10px var(--f-mono); color: var(--muted); }
+
+.mini-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; background: var(--chip); padding: 2px; border-radius: 6px; }
+.mini-seg button { border: 0; background: transparent; padding: 4px 4px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+.mini-seg button[aria-pressed="true"] { background: var(--card); color: var(--accent); box-shadow: 0 1px 2px rgba(0,0,0,.15); font-weight: 600; }
+.lulc-key { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 10px; font-size: 11.5px; }
+.lulc-key span { display: flex; align-items: center; gap: 6px; }
+.lulc-key i { width: 11px; height: 11px; border-radius: 2px; flex: none; box-shadow: inset 0 0 0 1px rgba(0,0,0,.12); }
+.goto { display: flex; flex-wrap: wrap; gap: 6px; }
+.goto button { border: 1px solid var(--line); background: var(--chip); border-radius: 20px; padding: 5px 11px; font-size: 12px; font-weight: 500; }
+.goto button:hover { border-color: var(--accent); color: var(--accent); }
+.foot { font-size: 10.5px; color: var(--muted); line-height: 1.5; padding: 0 2px; margin: 0; }
+.foot a { color: var(--accent); }
+
+/* map overlays */
+.readout { position: absolute; z-index: 1000; right: 12px; bottom: 28px; background: rgba(12,18,16,.88); color: #e8efe9; font: 11px/1.5 var(--f-mono);
+  padding: 7px 10px; border-radius: 8px; pointer-events: none; white-space: pre; }
+.toast { position: absolute; z-index: 1001; top: 14px; left: 50%; transform: translateX(-50%); background: var(--card); color: var(--fg); border: 1px solid var(--line);
+  border-left: 4px solid var(--warn); padding: 9px 12px; border-radius: 8px; box-shadow: var(--shadow); font-size: 13px; max-width: min(520px, calc(100% - 24px)); }
+.leaflet-popup-content { font: 11.5px/1.55 var(--f-mono); white-space: pre; margin: 10px 12px; }
+.leaflet-popup-content b { font: 600 13px var(--f-body); }
+.tag { display: inline-block; font: 600 10px var(--f-mono); padding: 1px 5px; border-radius: 3px; margin-right: 4px; color: #fff; }
+
+@media (max-width: 700px) {
+  .panel { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 55%; }
+  .panel.collapsed { transform: translateY(calc(100% + 20px)); }
+  .readout { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { .panel, .switch i, .switch i::after { transition: none; } }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<button class="open-btn" id="open" hidden>☰ Layers</button>
+
+<aside class="panel" id="panel">
+  <div class="band">
+    <svg class="topo" viewBox="0 0 368 190" preserveAspectRatio="none" aria-hidden="true" id="topo"></svg>
+    <button class="collapse-btn" id="collapse" aria-label="Hide panel" title="Hide panel">‹</button>
+    <div class="eyebrow">GEM-15 · 15 m DSM + DTM · Bengaluru</div>
+    <h1>Bengaluru <span>15 m</span></h1>
+    <p>Google's GEM-15 elevation model with Microsoft building footprints and ESA land cover. Check low ground and tall buildings against satellite imagery, then raise the water.</p>
+    <div class="kpis" id="kpis"></div>
+  </div>
+
+  <div class="scroll">
+    <section class="card">
+      <div class="card-h"><h2><i></i>Base map</h2><span class="muted" id="base-name"></span></div>
+      <div class="bases" id="bases"></div>
+      <div id="keyblock" hidden>
+        <p class="muted" style="margin-bottom:6px">Google base maps need an API key with the <b>Map Tiles API</b> enabled (<a href="https://console.cloud.google.com/apis/library/tile.googleapis.com" target="_blank" rel="noopener">enable it</a>). The key stays in this browser.</p>
+        <form class="keyrow" id="key-form"><input id="key-input" placeholder="AIza…" autocomplete="off" aria-label="Google API key"><button>Save</button></form>
+      </div>
+    </section>
+
+    <section class="card water">
+      <div class="card-h"><h2><i></i>Water &amp; rainfall</h2>
+        <label class="switch" title="Show water"><input type="checkbox" id="w-on" checked aria-label="Show water fill"><i></i></label></div>
+      <div class="seg three" id="w-mode">
+        <button data-v="rain" aria-pressed="true">Rainfall simulation</button>
+        <button data-v="rise" aria-pressed="false">Rise above drains</button>
+        <button data-v="level" aria-pressed="false">City-wide level</button>
+      </div>
+      <div id="rain-ui">
+        <div class="chips" id="rain-mm" role="group" aria-label="Rainfall total"></div>
+      </div>
+      <div class="big"><b id="w-val">100 mm</b><span id="w-sub">in 3 hours</span></div>
+      <div class="wrow">
+        <input type="range" id="w-range" min="0" max="10" step="0.25" value="3" aria-label="Water level">
+        <button class="play" id="w-play" aria-label="Play" title="Play">▶</button>
+      </div>
+      <div id="rain-ui2">
+        <div class="tick-row" id="rain-ticks"><span>0 h</span><span>rain stops · 3 h</span><span>6 h</span></div>
+        <svg class="spark" id="rain-spark" viewBox="0 0 320 64" preserveAspectRatio="none" aria-label="Flooded area over time"></svg>
+        <label class="peak"><input type="checkbox" id="rain-peak" checked> Show peak depth over the whole storm</label>
+      </div>
+      <div class="wstats">
+        <div><b id="ws-a">–</b><span id="ws-a-l">km² under water</span></div>
+        <div><b id="ws-b">–</b><span>buildings in water</span></div>
+        <div><b id="ws-c">–</b><span>of them ≥ 15 m tall</span></div>
+      </div>
+      <p class="muted" id="rain-note"><b>Rainfall simulation</b>: rain falls evenly on every 30 m cell for 3 h. Soil and vegetation absorb part of it (SCS Curve Number by ESA land cover), built-up areas lose 20 mm/h to stormwater drains, and the rest flows over the GEM-15 bare-earth surface (2D local-inertial shallow-water model). Pre-computed for six storms. Screening only: drain network, culverts and real rainfall patterns are not modelled.</p>
+      <p class="muted" id="level-note" hidden><b>Rise above drains &amp; lakes</b> floods ground less than this height above the stream or lake it drains to (HAND, Height Above Nearest Drainage, streams ≥ 1 km² catchment). <b>One city-wide level</b> fills every connected area below a single height above sea level. This is a terrain-only bathtub model for screening, not a hydrological flood forecast.</p>
+      <span class="busy" id="w-busy" hidden>computing…</span>
+    </section>
+
+    <section class="card">
+      <div class="card-h"><h2><i></i>Layers</h2><span class="muted">top draws over bottom</span></div>
+      <div class="layers" id="layers"></div>
+    </section>
+
+    <section class="card">
+      <h2><i></i>Go to</h2>
+      <div class="goto" id="goto"></div>
+    </section>
+
+    <p class="foot">Elevation: <a href="https://developers.google.com/earth-engine/datasets/catalog/projects_climate-and-sustainability_assets_gem-15_v1" target="_blank" rel="noopener">GEM-15 v1</a>. This dataset is produced by Google (CC BY 4.0). Land cover: ESA WorldCover 2021 (CC BY 4.0). Building footprints: Microsoft Global ML Building Footprints (ODbL); heights sampled from GEM-15. Building height = 95th-percentile surface − bare earth per 15 m cell. Low-lying = below the 1 km neighbourhood average. Heights are orthometric (EGM96).</p>
+  </div>
+</aside>
+
+<div class="readout" id="readout" hidden></div>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const R = 6378137;
+
+// ---------- decorative contour lines in the header band ----------
+(() => {
+  let d = "";
+  for (let k = 0; k < 14; k++) {
+    let p = `M -10 ${20 + k * 13}`;
+    for (let x = 0; x <= 380; x += 20) p += ` L ${x} ${(20 + k * 13 + Math.sin(x / 38 + k * .7) * 7 + Math.sin(x / 15 + k) * 2.5).toFixed(1)}`;
+    d += `<path d="${p}" fill="none" stroke="#7fe0c4" stroke-width="${k % 5 === 0 ? 1.3 : .6}"/>`;
+  }
+  $("topo").innerHTML = d;
+})();
+
+// ---------- base maps ----------
+const ESRI = "https://server.arcgisonline.com/ArcGIS/rest/services";
+const esriAttr = "Imagery © Esri, Maxar, Earthstar Geographics, and the GIS User Community";
+const THUMB = { z: 12, x: 2930, y: 1899 };
+const BASES = [
+  { id: "esri", name: "Esri Satellite", open: true, thumb: `${ESRI}/World_Imagery/MapServer/tile/${THUMB.z}/${THUMB.y}/${THUMB.x}`,
+    make: () => L.tileLayer(`${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`, { maxZoom: 20, maxNativeZoom: 19, attribution: esriAttr }) },
+  { id: "esrilab", name: "Esri + labels", open: true, thumb: `${ESRI}/World_Imagery/MapServer/tile/${THUMB.z}/${THUMB.y}/${THUMB.x}`,
+    make: () => L.layerGroup([
+      L.tileLayer(`${ESRI}/World_Imagery/MapServer/tile/{z}/{y}/{x}`, { maxZoom: 20, maxNativeZoom: 19, attribution: esriAttr }),
+      L.tileLayer(`${ESRI}/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}`, { maxZoom: 20, maxNativeZoom: 19, pane: "labels", opacity: .8 }),
+      L.tileLayer(`${ESRI}/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}`, { maxZoom: 20, maxNativeZoom: 19, pane: "labels" })]) },
+  { id: "osm", name: "OpenStreetMap", open: true, thumb: `https://tile.openstreetmap.org/${THUMB.z}/${THUMB.x}/${THUMB.y}.png`,
+    make: () => L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 20, maxNativeZoom: 19, attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' }) },
+  { id: "groad", name: "Google Map", g: { mapType: "roadmap" }, color: "#4a7fd6" },
+  { id: "gsat", name: "Google Satellite", g: { mapType: "satellite" }, color: "#2f5d3a" },
+  { id: "ghyb", name: "Google Hybrid", g: { mapType: "satellite", layerTypes: ["layerRoadmap"] }, color: "#3c6b4d" },
+];
+function getKey() {
+  const u = new URL(location.href).searchParams.get("key");
+  if (u) { try { localStorage.setItem("gmaps-key", u); } catch (e) {} return u; }
+  try { return localStorage.getItem("gmaps-key") || window.GMAPS_KEY || ""; } catch (e) { return window.GMAPS_KEY || ""; }
+}
+const KEY = getKey();
+function toast(msg, ms = 7000) { $("toast").textContent = msg; $("toast").hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => $("toast").hidden = true, ms); }
+async function googleLayer(cfg) {
+  const r = await fetch(`https://tile.googleapis.com/v1/createSession?key=${encodeURIComponent(KEY)}`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ language: "en-US", region: "IN", ...cfg }) });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error?.message || r.statusText);
+  return L.tileLayer(`https://tile.googleapis.com/v1/2dtiles/{z}/{x}/{y}?session=${j.session}&key=${encodeURIComponent(KEY)}`,
+    { maxZoom: 22, maxNativeZoom: 21, attribution: "Map data © Google" });
+}
+
+// ---------- overlay layers (top of list draws on top) ----------
+const LAYERS = [
+  { id: "msb", name: "Buildings · Microsoft footprints", sub: "783k outlines, height from GEM-15", on: false, op: 1, z: 485, isMsb: true,
+    grad: "#d9d3c7,#f2c14e,#ef7d2d,#d62f4b,#7a1f8e", labels: ["< 6 m", "15", "30", "60", "90 m+"] },
+  { id: "highrise", name: "High-rise cells (raster)", sub: "≥ 15 m above ground (NBC)", on: false, op: 1, z: 470,
+    grad: "#f2c14e,#ef7d2d,#d62f4b,#7a1f8e", labels: ["15 m", "30", "60", "90 m+"] },
+  { id: "buildings", name: "All buildings", sub: "≥ 6 m above ground", on: false, op: .9, z: 460,
+    grad: "#c9c3b8,#f2c14e,#ef7d2d,#d62f4b,#7a1f8e", labels: ["6 m", "15", "30", "60", "90+"] },
+  { id: "water", name: "Water fill", sub: "set in the Water level card", z: 450, isWater: true,
+    grad: "#78d7f5,#2a8fd0,#0a4b8c", labels: ["shallow", "depth", "deep"] },
+  { id: "ndsm", name: "Height above ground", sub: "buildings and trees", on: false, op: .8, z: 440,
+    grad: "#3b2a5c,#8c3c8a,#e0607e,#fff1a8", labels: ["2 m", "10", "20", "40 m+"] },
+  { id: "lowlying", name: "Low-lying areas", sub: "below 1 km neighbourhood average", on: true, op: .55, z: 430,
+    grad: "#9ecae1,#4292c6,#1c5aa6,#0b2f6b", labels: ["2 m", "4", "8", "12 m+"] },
+  { id: "lulc", name: "Land use / land cover", sub: "ESA WorldCover 2021 · 10 m", on: false, op: .7, z: 420, isLulc: true,
+    grad: "#fa0000,#006400,#f096ff,#ffbb22,#ffff4c,#0064c8", labels: [] },
+  { id: "elevation", name: "Bare-earth elevation", sub: "DTM with hillshade", on: false, op: .7, z: 410,
+    grad: "#1d6b4a,#86b062,#ece08f,#c88b4c,#6f4326", labels: ["low", "", "high"] },
+];
+const PLACES = [["Whole city", null], ["Bellandur & ORR", [12.930, 77.672, 15]], ["Central Bengaluru", [12.975, 77.600, 15]],
+  ["Hebbal valley", [13.043, 77.605, 15]], ["Vrishabhavathi valley", [12.900, 77.490, 14]], ["Whitefield", [12.975, 77.745, 15]], ["Varthur Lake", [12.944, 77.737, 15]]];
+
+let META, map, bounds, baseLayer, overlays = {};
+let W, H, N, DTM, SURF, CLS, TPI, HAND;
+let waterCanvas, waterCtx, waterImg, waterLayer, LVL;
+const S = { mode: "rain", val: 3, on: true };
+const RS = { meta: null, mm: 100, frame: 0, peak: true, cache: {} };
+const padLeft = () => innerWidth > 700 ? 390 : 0;
+
+async function boot() {
+  META = await (await fetch("meta.json")).json();
+  const s = META.stats;
+  $("kpis").innerHTML = [[`${Math.round(s.dtm_min)}–${Math.round(s.dtm_max)}`, "m ground elevation"], [`${s.low_km2}`, "km² low-lying"], [`${s.highrise_km2}`, "km² high-rise"]]
+    .map(([b, t]) => `<div class="kpi"><b>${b}</b><span>${t}</span></div>`).join("");
+  const lbl = LAYERS.find((x) => x.id === "elevation"); lbl.labels = [`${Math.round(s.dtm_min)} m`, "", `${Math.round(s.dtm_max)} m`];
+
+  const b = META.bounds;
+  bounds = L.latLngBounds([b.south, b.west], [b.north, b.east]);
+  map = L.map("map", { zoomControl: false, maxZoom: 20 });
+  L.control.zoom({ position: "topright" }).addTo(map);
+  L.control.scale({ position: "bottomright", imperial: false }).addTo(map);
+  map.createPane("labels").style.zIndex = 490; map.getPane("labels").style.pointerEvents = "none";
+  map.fitBounds(bounds, { paddingTopLeft: [padLeft(), 0] });
+  L.rectangle(bounds, { color: "#fff", weight: 1.2, fill: false, interactive: false, dashArray: "4 4" }).addTo(map);
+
+  renderBases(); setBase("esri");
+  renderLayers();
+  renderGoto();
+  map.on("click", (e) => {
+    const k = map.hasLayer(overlays.msb) && map.getZoom() >= 15 ? pickBuilding(e.latlng) : -1;
+    const v = sample(e.latlng);
+    const html = k >= 0 ? buildingHtml(k) : v && v.html;
+    if (html) L.popup({ autoPanPaddingTopLeft: [padLeft() + 16, 16], maxWidth: 360 }).setLatLng(e.latlng).setContent(html).openOn(map);
+  });
+  map.on("mousemove", (e) => { const v = sample(e.latlng); $("readout").hidden = !v; if (v) $("readout").textContent = v.text; });
+
+  $("w-busy").hidden = false;
+  const buf = new Uint8Array(await (await fetch("values.bin")).arrayBuffer());
+  W = META.w; H = META.h; N = W * H;
+  const u16a = new Uint16Array(buf.buffer, 0, N), u16b = new Uint16Array(buf.buffer, 2 * N, N);
+  DTM = new Float32Array(N); SURF = new Float32Array(N);
+  for (let i = 0; i < N; i++) { DTM[i] = u16a[i] / 10; SURF[i] = u16b[i] / 10; }
+  CLS = buf.subarray(4 * N, 5 * N); TPI = new Int8Array(buf.buffer, 5 * N, N);
+  const hu = new Uint16Array(buf.buffer, 6 * N, N); HAND = new Float32Array(N);
+  for (let i = 0; i < N; i++) HAND[i] = hu[i] === 65535 ? Infinity : hu[i] / 10;
+  await loadRain(); syncRainUI();
+  initWater();
+  loadBuildings();
+}
+
+// ---------- base map UI ----------
+function renderBases() {
+  $("bases").innerHTML = BASES.map((B) => {
+    const locked = !B.open && !KEY;
+    const th = B.thumb ? `<div class="thumb" style="background-image:url('${B.thumb}')"></div>` : `<div class="thumb g" style="background:${B.color}">G</div>`;
+    return `<button class="base${locked ? " locked" : ""}" id="b-${B.id}" data-id="${B.id}" aria-pressed="false">${th}<span>${B.name}</span>${locked ? "<small>KEY</small>" : B.open ? "<small>OPEN</small>" : ""}</button>`;
+  }).join("");
+  $("bases").querySelectorAll(".base").forEach((el) => el.onclick = () => {
+    if (el.classList.contains("locked")) { $("keyblock").hidden = false; $("key-input").focus(); return; }
+    setBase(el.dataset.id);
+  });
+}
+$("key-form").onsubmit = (e) => { e.preventDefault(); const k = $("key-input").value.trim(); if (!k) return; try { localStorage.setItem("gmaps-key", k); } catch (er) {} location.reload(); };
+async function setBase(id) {
+  const B = BASES.find((x) => x.id === id);
+  let layer;
+  try { layer = B.make ? B.make() : await googleLayer(B.g); }
+  catch (err) { toast(`Google tiles could not load: ${err.message}. Check that the Map Tiles API is enabled for this key.`); return; }
+  if (baseLayer) map.removeLayer(baseLayer);
+  baseLayer = layer.addTo(map);
+  BASES.forEach((x) => $(`b-${x.id}`).setAttribute("aria-pressed", String(x.id === id)));
+  $("base-name").textContent = B.name;
+}
+
+// ---------- overlay UI ----------
+function renderLayers() {
+  for (const Ly of LAYERS) {
+    map.createPane(Ly.id).style.zIndex = Ly.z;
+    if (Ly.isMsb) { overlays.msb = new BuildingLayer({ pane: "msb", opacity: Ly.op }); if (Ly.on) overlays.msb.addTo(map); }
+    else if (!Ly.isWater) {
+      overlays[Ly.id] = L.imageOverlay(`${Ly.id}.png`, bounds, { opacity: Ly.op, pane: Ly.id, className: "px", interactive: false });
+      if (Ly.on) overlays[Ly.id].addTo(map);
+    }
+  }
+  $("layers").innerHTML = LAYERS.map((Ly) => {
+    let labels = `<div class="ramp" style="background:linear-gradient(90deg,${Ly.grad})"></div><div class="ramp-l">${Ly.labels.map((t) => `<span>${t}</span>`).join("")}</div>`;
+    if (Ly.isLulc) labels = `<div class="lulc-key">${LULC.map(([c, n]) => `<span><i style="background:${c}"></i>${n}</span>`).join("")}</div>`;
+    if (Ly.isMsb) labels = `<div class="mini-seg" id="msb-mode"><button data-v="height" aria-pressed="true">Height</button><button data-v="flood" aria-pressed="false">In water</button><button data-v="low" aria-pressed="false">Low-lying</button></div>
+      <div id="msb-key">${labels}</div><p class="muted" id="msb-note" style="font-size:11px">Outlines from zoom 15; dots when zoomed out. Click a building for details.</p>`;
+    const head = `<span class="sw" style="background:linear-gradient(90deg,${Ly.grad})"></span><div class="nm"><b>${Ly.name}</b><span>${Ly.sub}</span></div>`;
+    if (Ly.isWater) return `<div class="layer"><div class="lh">${head}</div><div class="detail">${labels}</div></div>`;
+    return `<div class="layer"><div class="lh">${head}
+      <label class="switch"><input type="checkbox" id="cb-${Ly.id}" ${Ly.on ? "checked" : ""} aria-label="Show ${Ly.name}"><i></i></label></div>
+      <div class="detail" id="dt-${Ly.id}" ${Ly.on ? "" : "hidden"}>
+        <div class="op"><span>Opacity</span><input type="range" id="op-${Ly.id}" min="0" max="1" step="0.05" value="${Ly.op}" aria-label="${Ly.name} opacity"><span id="opv-${Ly.id}">${Math.round(Ly.op * 100)}%</span></div>
+        ${labels}</div></div>`;
+  }).join("");
+  for (const Ly of LAYERS) {
+    if (Ly.isWater) continue;
+    $(`cb-${Ly.id}`).onchange = (e) => { e.target.checked ? overlays[Ly.id].addTo(map) : map.removeLayer(overlays[Ly.id]); $(`dt-${Ly.id}`).hidden = !e.target.checked; };
+    $(`op-${Ly.id}`).oninput = (e) => { overlays[Ly.id].setOpacity(+e.target.value); $(`opv-${Ly.id}`).textContent = `${Math.round(e.target.value * 100)}%`; };
+  }
+  $("msb-mode").querySelectorAll("button").forEach((b) => b.onclick = () => {
+    BS.mode = b.dataset.v;
+    $("msb-mode").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    const keys = { height: `<div class="ramp" style="background:linear-gradient(90deg,#d9d3c7,#f2c14e,#ef7d2d,#d62f4b,#7a1f8e)"></div><div class="ramp-l"><span>&lt; 6 m</span><span>15</span><span>30</span><span>60</span><span>90 m+</span></div>`,
+      flood: `<div class="lulc-key"><span><i style="background:#1a8fd0"></i>In water (set level above)</span><span><i style="background:#cfc9be"></i>Dry</span></div>`,
+      low: `<div class="lulc-key"><span><i style="background:#2b62c4"></i>On low-lying ground</span><span><i style="background:#cfc9be"></i>Not low-lying</span></div>` };
+    $("msb-key").innerHTML = keys[BS.mode];
+    overlays.msb.redraw();
+  });
+}
+function renderGoto() {
+  $("goto").innerHTML = PLACES.map(([n], i) => `<button data-i="${i}">${n}</button>`).join("");
+  $("goto").querySelectorAll("button").forEach((b) => b.onclick = () => {
+    const p = PLACES[+b.dataset.i][1];
+    if (!p) map.flyToBounds(bounds, { paddingTopLeft: [padLeft(), 0], duration: .8 });
+    else {
+      // shift the target right so it lands in the visible part of the map, beside the panel
+      const pt = map.project([p[0], p[1]], p[2]).subtract([padLeft() / 2, 0]);
+      map.flyTo(map.unproject(pt, p[2]), p[2], { duration: .8 });
+    }
+  });
+}
+$("collapse").onclick = () => { $("panel").classList.add("collapsed"); $("open").hidden = false; };
+$("open").onclick = () => { $("panel").classList.remove("collapsed"); $("open").hidden = true; };
+
+// ---------- water fill ----------
+// Canvas-backed image overlay so the flood can be redrawn without re-encoding a PNG
+const CanvasOverlay = L.ImageOverlay.extend({
+  _initImage() {
+    const c = this._image = this._url;
+    L.DomUtil.addClass(c, "leaflet-image-layer"); L.DomUtil.addClass(c, "px");
+    if (this._zoomAnimated) L.DomUtil.addClass(c, "leaflet-zoom-animated");
+    c.onselectstart = L.Util.falseFn; c.onmousemove = L.Util.falseFn;
+  },
+});
+function initWater() {
+  waterCanvas = document.createElement("canvas"); waterCanvas.width = W; waterCanvas.height = H;
+  waterCtx = waterCanvas.getContext("2d"); waterImg = waterCtx.createImageData(W, H);
+  waterLayer = new CanvasOverlay(waterCanvas, bounds, { pane: "water", interactive: false });
+  LVL = new Float32Array(N);
+  if (S.on) waterLayer.addTo(map);
+  computeWater();
+}
+// Multi-source flood fill on bare-earth elevation. Each flooded cell carries the water level of the source it came from.
+function computeWater() {
+  if (S.mode === "rain") return computeRain();
+  const t0 = performance.now();
+  LVL.fill(0);
+  const q = computeWater.q || (computeWater.q = new Int32Array(N));
+  let qt = 0;
+  const v = S.val;
+  if (S.mode === "rise") {
+    // HAND: flood every cell less than v metres above the stream or lake it drains to
+    for (let i = 0; i < N; i++) if (DTM[i] && (CLS[i] === 3 || HAND[i] < v)) LVL[i] = DTM[i] - HAND[i] + v;
+  } else {
+    let mi = -1;
+    for (let i = 0; i < N; i++) {
+      const d = DTM[i]; if (!d) continue;
+      if (mi < 0 || d < DTM[mi]) mi = i;
+      if (CLS[i] === 3 && d < v) { LVL[i] = v; q[qt++] = i; }
+    }
+    const seed = (i) => { const d = DTM[i]; if (d && !LVL[i] && d < v) { LVL[i] = v; q[qt++] = i; } };
+    if (mi >= 0) seed(mi);
+    for (let c = 0; c < W; c++) { seed(c); seed((H - 1) * W + c); }
+    for (let r = 0; r < H; r++) { seed(r * W); seed(r * W + W - 1); }
+  }
+  let qh = 0;
+  const go = (j, lv) => { const d = DTM[j]; if (!LVL[j] && d && d < lv) { LVL[j] = lv; q[qt++] = j; } };
+  while (qh < qt) {
+    const i = q[qh++], lv = LVL[i], r = (i / W) | 0, c = i - r * W;
+    if (c > 0) go(i - 1, lv);
+    if (c < W - 1) go(i + 1, lv);
+    if (r > 0) go(i - W, lv);
+    if (r < H - 1) go(i + W, lv);
+  }
+  const px = waterImg.data; let fl = 0, fb = 0, fh = 0;
+  for (let i = 0, p = 0; i < N; i++, p += 4) {
+    const lv = LVL[i];
+    if (!lv) { px[p + 3] = 0; continue; }
+    const lake = CLS[i] === 3, t = lake ? 1 : Math.min((lv - DTM[i]) / 3, 1);
+    px[p] = 73 - 63 * t; px[p + 1] = 211 - 132 * t; px[p + 2] = 240 - 102 * t; px[p + 3] = lake ? 200 : 215;
+    if (!lake) { fl++; if (CLS[i] === 2) { fb++; if (SURF[i] - DTM[i] >= 15) fh++; } }
+  }
+  waterCtx.putImageData(waterImg, 0, 0);
+  const a = META.res * META.res / 1e6 * Math.pow(Math.cos(13 * Math.PI / 180), 2);   // mercator cell -> ground km²
+  const f = (x) => (x * a).toFixed(x * a < 10 ? 2 : 1);
+  $("ws-a").textContent = f(fl); $("ws-a-l").textContent = "km² under water";
+  waterBuildingStats();
+  $("w-busy").hidden = true;
+  computeWater.ms = performance.now() - t0;
+}
+
+// ---------- rainfall simulation playback ----------
+async function loadRain() {
+  try { RS.meta = await (await fetch("rain/rain.json")).json(); } catch (e) { RS.meta = null; }
+  if (!RS.meta) { $("rain-mm").innerHTML = '<p class="muted">Run rain_sim.py to create the rainfall scenarios.</p>'; return; }
+  const mms = RS.meta.scenarios.map((x) => x.mm);
+  if (!mms.includes(RS.mm)) RS.mm = mms[Math.floor(mms.length / 2)];
+  $("rain-mm").innerHTML = mms.map((m) => `<button data-mm="${m}" aria-pressed="${m === RS.mm}">${m}<small>mm</small></button>`).join("");
+  $("rain-mm").querySelectorAll("button").forEach((b) => b.onclick = () => {
+    RS.mm = +b.dataset.mm; $("rain-mm").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    syncRainUI(); scheduleWater();
+  });
+  const total = RS.meta.rain_h + RS.meta.recession_h;
+  $("rain-ticks").innerHTML = `<span>0 h</span><span>rain stops · ${RS.meta.rain_h} h</span><span>${total} h</span>`;
+}
+function rainScenario() { return RS.meta.scenarios.find((x) => x.mm === RS.mm); }
+function rainFrameName() {
+  const sc = rainScenario();
+  if (RS.peak || RS.frame <= 0) return RS.peak ? `${sc.mm}_max.png` : null;
+  return `${sc.mm}_${sc.frames[RS.frame - 1]}.png`;
+}
+function loadDepth(name) {
+  if (RS.cache[name]) return RS.cache[name];
+  return (RS.cache[name] = new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas"); c.width = img.width; c.height = img.height;
+      const x = c.getContext("2d", { willReadFrequently: true }); x.drawImage(img, 0, 0);
+      const d = x.getImageData(0, 0, img.width, img.height).data, out = new Uint8Array(img.width * img.height);
+      for (let i = 0; i < out.length; i++) out[i] = d[i * 4];
+      res(out);
+    };
+    img.onerror = rej; img.src = `rain/${name}`;
+  }));
+}
+async function computeRain() {
+  if (!RS.meta) { $("w-busy").hidden = true; return; }
+  const t0 = performance.now(), name = rainFrameName();
+  const dep = name ? await loadDepth(name) : null;
+  if (S.mode !== "rain") return;
+  const W2 = RS.meta.w, H2 = RS.meta.h, step = RS.meta.depth_step_m, px = waterImg.data;
+  let wet = 0;
+  LVL.fill(0);
+  for (let r = 0, i = 0; r < H; r++) {
+    const r2 = r >> 1, row = r2 < H2 ? r2 * W2 : -1;
+    for (let c = 0; c < W; c++, i++) {
+      const p = i * 4, c2 = c >> 1;
+      const dv = dep && row >= 0 && c2 < W2 ? dep[row + c2] * step : 0;
+      if (dv >= 0.05) {
+        const t = Math.min(dv / 1.0, 1);
+        px[p] = 120 - 110 * t; px[p + 1] = 215 - 140 * t; px[p + 2] = 245 - 105 * t; px[p + 3] = 120 + 110 * Math.min(dv / 0.3, 1);
+        if (dv >= 0.10) { LVL[i] = DTM[i] + dv; if (CLS[i] !== 3) wet++; }
+      } else if (CLS[i] === 3) { px[p] = 10; px[p + 1] = 79; px[p + 2] = 138; px[p + 3] = 150; }
+      else px[p + 3] = 0;
+    }
+  }
+  waterCtx.putImageData(waterImg, 0, 0);
+  const a = META.res * META.res / 1e6 * Math.pow(Math.cos(13 * Math.PI / 180), 2);
+  $("ws-a").textContent = (wet * a).toFixed(wet * a < 10 ? 2 : 1); $("ws-a-l").textContent = "km² ≥ 10 cm deep";
+  waterBuildingStats();
+  drawSpark();
+  $("w-busy").hidden = true;
+  computeWater.ms = performance.now() - t0;
+  // warm the cache for the next frame while playing
+  if (!RS.peak) { const sc = rainScenario(); if (RS.frame < sc.frames.length) loadDepth(`${sc.mm}_${sc.frames[RS.frame]}.png`); }
+}
+function drawSpark() {
+  const sc = rainScenario(); if (!sc) return;
+  const total = (RS.meta.rain_h + RS.meta.recession_h) * 60, Wd = 320, Hd = 64, top = 6, bot = 52;
+  const ymax = Math.max(...RS.meta.scenarios.map((s2) => s2.max.wet10_km2)) * 1.05;
+  const X = (m) => (m / total) * Wd, Y = (v) => bot - (v / ymax) * (bot - top);
+  const pts = [[0, 0], ...sc.stats.map((s2) => [s2.min, s2.wet10_km2])];
+  const line = pts.map(([m, v], i) => `${i ? "L" : "M"}${X(m).toFixed(1)},${Y(v).toFixed(1)}`).join("");
+  const cur = RS.peak ? null : (RS.frame ? sc.frames[RS.frame - 1] : 0);
+  const peakV = Math.max(...sc.stats.map((s2) => s2.wet10_km2));
+  $("rain-spark").innerHTML =
+    `<rect x="0" y="${top}" width="${X(RS.meta.rain_h * 60)}" height="${bot - top}" fill="var(--water)" opacity=".08"/>` +
+    `<line x1="0" y1="${bot}" x2="${Wd}" y2="${bot}" stroke="var(--line)"/>` +
+    `<path d="${line}L${X(pts[pts.length - 1][0])},${bot}L0,${bot}Z" fill="var(--water)" opacity=".18"/>` +
+    `<path d="${line}" fill="none" stroke="var(--water)" stroke-width="1.8" vector-effect="non-scaling-stroke"/>` +
+    (cur !== null ? `<line x1="${X(cur)}" y1="${top}" x2="${X(cur)}" y2="${bot}" stroke="var(--fg)" stroke-width="1" stroke-dasharray="2 2" vector-effect="non-scaling-stroke"/>` : "") +
+    `<text x="4" y="${top + 9}">area ≥ 10 cm deep at each moment · highest ${peakV.toFixed(0)} km²</text><text x="4" y="62">rain</text>`;
+}
+function syncRainUI() {
+  const rain = S.mode === "rain";
+  $("rain-ui").hidden = !rain; $("rain-ui2").hidden = !rain; $("rain-note").hidden = !rain; $("level-note").hidden = rain;
+  const r = $("w-range");
+  if (rain && RS.meta) {
+    const sc = rainScenario();
+    r.min = 0; r.max = sc.frames.length; r.step = 1; r.value = RS.peak ? sc.frames.length : RS.frame;
+    r.setAttribute("aria-label", "Storm time");
+    const tmin = RS.frame ? sc.frames[RS.frame - 1] : 0;
+    $("w-val").textContent = `${RS.mm} mm`;
+    $("w-sub").textContent = RS.peak ? `in ${RS.meta.rain_h} h · peak depth over the storm` : `in ${RS.meta.rain_h} h · at ${Math.floor(tmin / 60)}:${String(tmin % 60).padStart(2, "0")} h${tmin <= RS.meta.rain_h * 60 ? " (raining)" : " (draining)"}`;
+  } else r.setAttribute("aria-label", "Water level");
+}
+let wPending = false;
+function scheduleWater() { if (!DTM || wPending) return; wPending = true; $("w-busy").hidden = false; setTimeout(() => { wPending = false; computeWater(); }, 0); }
+function waterLabels() {
+  if (S.mode === "rain") return syncRainUI();
+  if (S.mode === "rise") { $("w-val").textContent = `+${S.val.toFixed(2).replace(/0$/, "")} m`; $("w-sub").textContent = "above the nearest stream or lake"; }
+  else { $("w-val").textContent = `${S.val.toFixed(0)} m`; $("w-sub").textContent = "water surface above sea level"; }
+}
+$("w-mode").querySelectorAll("button").forEach((b) => b.onclick = () => {
+  S.mode = b.dataset.v;
+  $("w-mode").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+  const r = $("w-range");
+  syncRainUI();
+  if (S.mode === "rain") { waterLabels(); scheduleWater(); return; }
+  if (S.mode === "rise") { r.min = 0; r.max = 10; r.step = .25; S.val = 3; }
+  else { r.min = Math.floor(META.stats.dtm_min); r.max = 960; r.step = 1; S.val = 880; }
+  r.value = S.val; waterLabels(); scheduleWater();
+});
+$("w-range").oninput = (e) => {
+  if (S.mode === "rain") { RS.frame = +e.target.value; RS.peak = false; $("rain-peak").checked = false; }
+  else S.val = +e.target.value;
+  waterLabels(); scheduleWater();
+};
+$("rain-peak").onchange = (e) => { RS.peak = e.target.checked; if (!RS.peak && !RS.frame) RS.frame = RS.meta ? rainScenario().frames.length / 2 : 0; waterLabels(); scheduleWater(); };
+$("w-on").onchange = (e) => { S.on = e.target.checked; if (!waterLayer) return; S.on ? waterLayer.addTo(map) : map.removeLayer(waterLayer); waterBuildingStats(); };
+let playT = null;
+function stopPlay() { clearTimeout(playT); playT = null; $("w-play").textContent = "▶"; }
+$("w-play").onclick = () => {
+  if (playT) return stopPlay();
+  $("w-play").textContent = "❚❚";
+  if (S.mode === "rain") {
+    if (!RS.meta) return stopPlay();
+    const n = rainScenario().frames.length;
+    RS.peak = false; $("rain-peak").checked = false;
+    if (RS.frame >= n) RS.frame = 0;
+    const tickR = async () => {
+      RS.frame++; $("w-range").value = RS.frame; waterLabels(); await computeRain();
+      if (RS.frame >= n) stopPlay(); else if (playT) playT = setTimeout(tickR, 350);
+    };
+    playT = setTimeout(tickR, 0);
+    return;
+  }
+  const r = $("w-range"), lo = +r.min, hi = S.mode === "rise" ? 8 : 920, step = S.mode === "rise" ? .25 : 2;
+  if (S.val >= hi) S.val = lo;
+  const tick = () => {
+    S.val = Math.min(hi, S.val + step); r.value = S.val; waterLabels(); computeWater();
+    if (S.val >= hi) stopPlay(); else playT = setTimeout(tick, 60);
+  };
+  playT = setTimeout(tick, 0);
+};
+
+// ---------- Microsoft building footprints ----------
+const LULC = [["#fa0000", "Built-up"], ["#006400", "Tree cover"], ["#f096ff", "Cropland"], ["#ffbb22", "Shrubland"],
+  ["#ffff4c", "Grassland"], ["#b4b4b4", "Bare / sparse"], ["#0064c8", "Permanent water"], ["#0096a0", "Wetland"]];
+const BS = { mode: "height" };
+let BLD = null;
+const HSTOPS = [[6, [217, 211, 199]], [15, [242, 193, 78]], [30, [239, 125, 45]], [60, [214, 47, 75]], [90, [122, 31, 142]]];
+const HCOL = Array.from({ length: 91 }, (_, h) => {      // colour string per whole metre
+  if (h < 6) return "rgb(217,211,199)";
+  for (let i = 1; i < HSTOPS.length; i++) if (h <= HSTOPS[i][0]) {
+    const [h0, c0] = HSTOPS[i - 1], [h1, c1] = HSTOPS[i], t = (h - h0) / (h1 - h0);
+    return `rgb(${c0.map((v, k) => Math.round(v + (c1[k] - v) * t)).join(",")})`;
+  }
+  return "rgb(122,31,142)";
+});
+async function loadBuildings() {
+  const [m, buf] = await Promise.all([fetch("buildings.json").then((r) => r.json()), fetch("buildings.bin").then((r) => r.arrayBuffer())]);
+  const T = { "<i4": Int32Array, "<u4": Uint32Array, "<i2": Int16Array, "<u2": Uint16Array, "|u1": Uint8Array };
+  const A = {}; for (const [k, [off, n, dt]] of Object.entries(m.layout)) A[k] = new T[dt](buf, off, n);
+  const cell = new Int32Array(m.n);
+  for (let k = 0; k < m.n; k++) {
+    const c = Math.floor(A.cx[k] / 10 / META.res), r = Math.floor(A.cy[k] / 10 / META.res);
+    cell[k] = c >= 0 && r >= 0 && c < W && r < H ? r * W + c : -1;
+  }
+  BLD = { ...m, ...A, cell };
+  $("msb-note").textContent = `${m.n.toLocaleString("en-IN")} footprints · ${m.stats.gem_ge15.toLocaleString("en-IN")} at ≥ 15 m. Outlines from zoom 15, dots when zoomed out. Click one for details.`;
+  waterBuildingStats();
+  overlays.msb.redraw();
+}
+function bColour(k) {
+  if (BS.mode === "flood") {
+    const c = BLD.cell[k];
+    if (S.on && c >= 0 && LVL && LVL[c] && CLS[c] !== 3) { const d = Math.min((LVL[c] - DTM[c]) / 3, 1); return `rgb(${Math.round(73 - 63 * d)},${Math.round(180 - 100 * d)},${Math.round(240 - 100 * d)})`; }
+    return "rgba(207,201,190,.8)";
+  }
+  if (BS.mode === "low") return BLD.flags[k] & 1 ? "rgb(43,98,196)" : "rgba(207,201,190,.8)";
+  return HCOL[Math.min(90, Math.round(BLD.gem_h[k] / 10))];
+}
+const BuildingLayer = L.GridLayer.extend({
+  createTile(coords) {
+    const tile = document.createElement("canvas"), sz = this.getTileSize(), dpr = Math.min(devicePixelRatio || 1, 2);
+    tile.width = sz.x * dpr; tile.height = sz.y * dpr;
+    if (BLD) drawBuildings(tile.getContext("2d"), coords, sz.x, dpr);
+    return tile;
+  },
+});
+function drawBuildings(ctx, coords, ts, dpr) {
+  const z = coords.z, PR = Math.PI * R, sc = ts * Math.pow(2, z) / (2 * PR);       // px per mercator metre
+  const tx = coords.x * ts, ty = coords.y * ts, [ox, oy] = BLD.origin;
+  const X0 = tx / sc - PR - ox, X1 = (tx + ts) / sc - PR - ox, Y0 = oy - (PR - ty / sc), Y1 = oy - (PR - (ty + ts) / sc);
+  const B = BLD.bucket, bc0 = Math.max(0, Math.floor(X0 / B) - 1), bc1 = Math.min(BLD.bw - 1, Math.floor(X1 / B) + 1);
+  const br0 = Math.max(0, Math.floor(Y0 / B) - 1), br1 = Math.min(BLD.bh - 1, Math.floor(Y1 / B) + 1);
+  if (bc0 > bc1 || br0 > br1) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const poly = z >= 15, dot = z >= 13 ? 1.6 : 1.1, k10 = sc / 10;
+  const bx = (ox + PR) * sc - tx, by = (PR - oy) * sc - ty;
+  ctx.lineWidth = z >= 17 ? 1 : .5; ctx.strokeStyle = "rgba(20,20,20,.55)";
+  const { cx, cy, voff, v, boff } = BLD;
+  for (let br = br0; br <= br1; br++) for (let bc = bc0; bc <= bc1; bc++) {
+    const b = br * BLD.bw + bc;
+    for (let k = boff[b]; k < boff[b + 1]; k++) {
+      const px = bx + cx[k] * k10, py = by + cy[k] * k10;
+      if (px < -60 || py < -60 || px > ts + 60 || py > ts + 60) continue;
+      ctx.fillStyle = bColour(k);
+      if (!poly) { ctx.fillRect(px - dot / 2, py - dot / 2, dot, dot); continue; }
+      ctx.beginPath();
+      for (let j = voff[k]; j < voff[k + 1]; j++) { const x = px + v[2 * j] * k10, y = py + v[2 * j + 1] * k10; j === voff[k] ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
+      ctx.closePath(); ctx.fill(); if (z >= 16) ctx.stroke();
+    }
+  }
+}
+function pickBuilding(ll) {
+  if (!BLD) return -1;
+  const PR = Math.PI * R, x = R * ll.lng * Math.PI / 180, y = R * Math.log(Math.tan(Math.PI / 4 + ll.lat * Math.PI / 360));
+  const X = (x - BLD.origin[0]) * 10, Y = (BLD.origin[1] - y) * 10, B = BLD.bucket * 10;
+  const bc = Math.floor(X / B), br = Math.floor(Y / B);
+  for (let r = br - 1; r <= br + 1; r++) for (let c = bc - 1; c <= bc + 1; c++) {
+    if (r < 0 || c < 0 || r >= BLD.bh || c >= BLD.bw) continue;
+    const b = r * BLD.bw + c;
+    for (let k = BLD.boff[b]; k < BLD.boff[b + 1]; k++) {
+      const qx = X - BLD.cx[k], qy = Y - BLD.cy[k];
+      if (Math.abs(qx) > 3000 || Math.abs(qy) > 3000) continue;
+      let inside = false;
+      for (let i = BLD.voff[k], j = BLD.voff[k + 1] - 1; i < BLD.voff[k + 1]; j = i++) {
+        const xi = BLD.v[2 * i], yi = BLD.v[2 * i + 1], xj = BLD.v[2 * j], yj = BLD.v[2 * j + 1];
+        if ((yi > qy) !== (yj > qy) && qx < (xj - xi) * (qy - yi) / (yj - yi) + xi) inside = !inside;
+      }
+      if (inside) return k;
+    }
+  }
+  return -1;
+}
+function buildingHtml(k) {
+  const gh = BLD.gem_h[k] / 10, gd = BLD.dtm[k] / 10, hd = BLD.hand[k], c = BLD.cell[k];
+  const tags = [];
+  if (gh >= 15) tags.push(["HIGH-RISE", "#d62f4b"]);
+  if (BLD.flags[k] & 1) tags.push(["LOW-LYING", "#1c5aa6"]);
+  if (S.on && c >= 0 && LVL[c] && CLS[c] !== 3) tags.push([`IN WATER ${(LVL[c] - DTM[c]).toFixed(1)} m`, "#1279c4"]);
+  const ms = BLD.ms_h[k] > 0 ? `${(BLD.ms_h[k] / 10).toFixed(1)} m` : "not published here";
+  return `<b>Building · Microsoft footprint</b>\n${tags.map(([t, c2]) => `<span class="tag" style="background:${c2}">${t}</span>`).join("")}${tags.length ? "\n" : ""}` +
+    `Footprint area   ${BLD.area[k].toLocaleString("en-IN").padStart(7)} m²\nGEM-15 height    ${gh.toFixed(1).padStart(7)} m\n≈ floors         ${String(Math.max(1, Math.round(gh / 3.2))).padStart(7)}\n` +
+    `Ground (DTM)     ${gd.toFixed(1).padStart(7)} m\nAbove drain      ${hd === 65535 ? "      –" : (hd / 10).toFixed(1).padStart(7)} m\nMicrosoft height ${ms}`;
+}
+function waterBuildingStats() {
+  if (!BLD || !LVL) return;
+  let nb = 0, nh = 0;
+  for (let k = 0; k < BLD.n; k++) { const c = BLD.cell[k]; if (c >= 0 && LVL[c] && CLS[c] !== 3) { nb++; if (BLD.gem_h[k] >= 150) nh++; } }
+  $("ws-b").textContent = nb.toLocaleString("en-IN"); $("ws-c").textContent = nh.toLocaleString("en-IN");
+  if (BS.mode === "flood" && overlays.msb && map.hasLayer(overlays.msb)) overlays.msb.redraw();
+}
+
+// ---------- click / hover query ----------
+const COVER = ["Open ground", "Trees", "Built-up", "Lake / tank", "Grass, crops, scrub", "Bare / sparse", "Wetland"];
+function sample(ll) {
+  if (!DTM) return null;
+  const x = R * ll.lng * Math.PI / 180, y = R * Math.log(Math.tan(Math.PI / 4 + ll.lat * Math.PI / 360));
+  const [l, , , t] = META.merc, c = Math.floor((x - l) / META.res), r = Math.floor((t - y) / META.res);
+  if (c < 0 || r < 0 || c >= W || r >= H) return null;
+  const i = r * W + c, dtm = DTM[i];
+  if (!dtm) return null;
+  const surf = SURF[i], cls = CLS[i], tpi = TPI[i] / 4, h = Math.max(surf - dtm, 0), f = (v) => v.toFixed(1).padStart(6);
+  const tags = [];
+  if (tpi <= -4) tags.push(["LOW-LYING", "#1c5aa6"]);
+  if (cls === 2 && h >= 15) tags.push(["HIGH-RISE", "#d62f4b"]);
+  if (S.on && LVL && LVL[i] && cls !== 3) tags.push([`UNDER WATER ${(LVL[i] - dtm).toFixed(1)} m`, "#1279c4"]);
+  const hd = HAND[i], text = `Ground (DTM)   ${f(dtm)} m\nSurface (DSM)  ${f(surf)} m\nAbove ground   ${f(h)} m\nAbove drain    ${isFinite(hd) ? f(hd) : "     –"} m\n${ll.lat.toFixed(5)}° N  ${ll.lng.toFixed(5)}° E`;
+  return { text: `${COVER[cls] || "—"}\n${text}`,
+    html: `<b>${COVER[cls] || "—"}</b>\n${tags.map(([tg, c2]) => `<span class="tag" style="background:${c2}">${tg}</span>`).join("")}${tags.length ? "\n" : ""}${text}` };
+}
+boot();
+</script>
+</body>
+</html>
