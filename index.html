@@ -232,6 +232,7 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 
 <script>
 const $ = (id) => document.getElementById(id);
+const DATA_V = "30m-2026-11-15";   // bump when data files change so browsers never mix old and new files
 const R = 6378137;
 
 // ---------- decorative contour lines in the header band ----------
@@ -310,7 +311,7 @@ const RS = { meta: null, mm: 100, frame: 0, peak: true, cache: {} };
 const padLeft = () => innerWidth > 700 ? 390 : 0;
 
 async function boot() {
-  META = await (await fetch("meta.json")).json();
+  META = await (await fetch(`meta.json?v=${DATA_V}`)).json();
   const s = META.stats;
   $("kpis").innerHTML = [[`${Math.round(s.dtm_min)}–${Math.round(s.dtm_max)}`, "m ground elevation"], [`${s.low_km2}`, "km² low-lying"], [`${s.highrise_km2}`, "km² high-rise"]]
     .map(([b, t]) => `<div class="kpi"><b>${b}</b><span>${t}</span></div>`).join("");
@@ -337,7 +338,7 @@ async function boot() {
   map.on("mousemove", (e) => { const v = sample(e.latlng); $("readout").hidden = !v; if (v) $("readout").textContent = v.text; });
 
   $("w-busy").hidden = false;
-  const buf = new Uint8Array(await (await fetch("values.bin")).arrayBuffer());
+  const buf = new Uint8Array(await (await fetch(`values.bin?v=${DATA_V}`)).arrayBuffer());
   W = META.w; H = META.h; N = W * H;
   const u16a = new Uint16Array(buf.buffer, 0, N), u16b = new Uint16Array(buf.buffer, 2 * N, N);
   DTM = new Float32Array(N); SURF = new Float32Array(N);
@@ -496,7 +497,7 @@ function computeWater() {
 
 // ---------- rainfall simulation playback ----------
 async function loadRain() {
-  try { RS.meta = await (await fetch("rain/rain.json")).json(); } catch (e) { RS.meta = null; }
+  try { RS.meta = await (await fetch(`rain/rain.json?v=${DATA_V}`)).json(); } catch (e) { RS.meta = null; }
   if (!RS.meta) { $("rain-mm").innerHTML = '<p class="muted">Run rain_sim.py to create the rainfall scenarios.</p>'; return; }
   const mms = RS.meta.scenarios.map((x) => x.mm);
   if (!mms.includes(RS.mm)) RS.mm = mms[Math.floor(mms.length / 2)];
@@ -521,17 +522,18 @@ function loadDepth(name) {
     img.onload = () => {
       const c = document.createElement("canvas"); c.width = img.width; c.height = img.height;
       const x = c.getContext("2d", { willReadFrequently: true }); x.drawImage(img, 0, 0);
+      if (RS.meta && (img.width !== RS.meta.w || img.height !== RS.meta.h)) { delete RS.cache[name]; return rej(new Error("stale frame")); }
       const d = x.getImageData(0, 0, img.width, img.height).data, out = new Uint8Array(img.width * img.height);
       for (let i = 0; i < out.length; i++) out[i] = d[i * 4];
       res(out);
     };
-    img.onerror = rej; img.src = `rain/${name}`;
+    img.onerror = rej; img.src = `rain/${name}?v=${DATA_V}`;
   }));
 }
 async function computeRain() {
   if (!RS.meta) { $("w-busy").hidden = true; return; }
   const t0 = performance.now(), name = rainFrameName();
-  const dep = name ? await loadDepth(name) : null;
+  const dep = name ? await loadDepth(name).catch(() => null) : null;
   if (S.mode !== "rain") return;
   const W2 = RS.meta.w, H2 = RS.meta.h, step = RS.meta.depth_step_m, px = waterImg.data;
   let wet = 0;
@@ -654,7 +656,7 @@ const HCOL = Array.from({ length: 91 }, (_, h) => {      // colour string per wh
   return "rgb(122,31,142)";
 });
 async function loadBuildings() {
-  const [m, buf] = await Promise.all([fetch("buildings.json").then((r) => r.json()), fetch("buildings.bin").then((r) => r.arrayBuffer())]);
+  const [m, buf] = await Promise.all([fetch(`buildings.json?v=${DATA_V}`).then((r) => r.json()), fetch(`buildings.bin?v=${DATA_V}`).then((r) => r.arrayBuffer())]);
   const T = { "<i4": Int32Array, "<u4": Uint32Array, "<i2": Int16Array, "<u2": Uint16Array, "|u1": Uint8Array };
   const A = {}; for (const [k, [off, n, dt]] of Object.entries(m.layout)) A[k] = new T[dt](buf, off, n);
   const cell = new Int32Array(m.n);
