@@ -95,6 +95,12 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
 .wstats span { font-size: 10.5px; color: var(--muted); line-height: 1.25; display: block; }
 .busy { font: 11px var(--f-mono); color: var(--water); }
 .seg.three { grid-template-columns: repeat(3, 1fr); }
+.dkey { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; }
+.dkey div { display: flex; flex-direction: column; gap: 2px; font-size: 10px; line-height: 1.2; color: var(--muted); }
+.dkey i { height: 10px; border-radius: 2px; display: block; }
+.dkey b { font: 600 10.5px var(--f-mono); color: var(--fg); }
+.lake-key { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+.lake-key i { width: 14px; height: 10px; border-radius: 2px; background: #6f9c97; display: inline-block; }
 .seg.three button { font-size: 11.5px; padding: 6px 4px; line-height: 1.2; }
 .chips { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
 .chips button { border: 1px solid color-mix(in srgb, var(--water) 35%, var(--line)); background: var(--card); color: var(--water); border-radius: 7px; padding: 5px 0 4px; font: 600 13px/1.05 var(--f-mono); display: flex; flex-direction: column; align-items: center; gap: 1px; }
@@ -183,12 +189,11 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
     </section>
 
     <section class="card water">
-      <div class="card-h"><h2><i></i>Water &amp; rainfall</h2>
+      <div class="card-h"><h2><i></i>Flood simulation</h2>
         <label class="switch" title="Show water"><input type="checkbox" id="w-on" checked aria-label="Show water fill"><i></i></label></div>
-      <div class="seg three" id="w-mode">
-        <button data-v="rain" aria-pressed="true">Rainfall simulation</button>
-        <button data-v="rise" aria-pressed="false">Rise above drains</button>
-        <button data-v="level" aria-pressed="false">City-wide level</button>
+      <div class="seg" id="w-mode">
+        <button data-v="rain" aria-pressed="true">Rainstorm</button>
+        <button data-v="rise" aria-pressed="false">Quick screen: height above drain</button>
       </div>
       <div id="rain-ui">
         <div class="chips" id="rain-mm" role="group" aria-label="Rainfall total"></div>
@@ -203,13 +208,15 @@ button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); ou
         <svg class="spark" id="rain-spark" viewBox="0 0 320 64" preserveAspectRatio="none" aria-label="Flooded area over time"></svg>
         <label class="peak"><input type="checkbox" id="rain-peak" checked> Show peak depth over the whole storm</label>
       </div>
+      <div class="dkey" id="dkey" aria-label="Water depth classes"></div>
+      <div class="lake-key"><i></i>Existing lake or tank (not flood water)</div>
       <div class="wstats">
         <div><b id="ws-a">–</b><span id="ws-a-l">km² under water</span></div>
         <div><b id="ws-b">–</b><span>buildings in water</span></div>
         <div><b id="ws-c">–</b><span>of them ≥ 15 m tall</span></div>
       </div>
-      <p class="muted" id="rain-note"><b>Rainfall simulation</b>: rain falls evenly on every 30 m cell for 3 h. Soil and vegetation absorb part of it (SCS Curve Number by ESA land cover), built-up areas lose 20 mm/h to stormwater drains, and the rest flows over the GEM-15 bare-earth surface (2D local-inertial shallow-water model). Pre-computed for six storms. Screening only: drain network, culverts and real rainfall patterns are not modelled.</p>
-      <p class="muted" id="level-note" hidden><b>Rise above drains &amp; lakes</b> floods ground less than this height above the stream or lake it drains to (HAND, Height Above Nearest Drainage, streams ≥ 1 km² catchment). <b>One city-wide level</b> fills every connected area below a single height above sea level. This is a terrain-only bathtub model for screening, not a hydrological flood forecast.</p>
+      <p class="muted" id="rain-note"><b>Rainstorm</b>: a 3-hour storm peaking after 1 hour falls on every 15 m cell. Soil and vegetation absorb part of it (Curve Number by ESA land cover). The rest flows over the GEM-15 bare ground with OpenStreetMap drains and natural streams cut in, around Microsoft building footprints, and into lakes, which hold 1 m extra before spilling. Built-up areas also lose 10 mm/h to minor drains. 2D shallow-water model, pre-computed for six storms. Screening only: not calibrated against real floods.</p>
+      <p class="muted" id="level-note" hidden><b>Quick screen</b> floods every place less than this height above the stream or lake it drains to (HAND, Height Above Nearest Drainage). No rainfall or flow is simulated; use it to see which ground is close to its drain.</p>
       <span class="busy" id="w-busy" hidden>computing…</span>
     </section>
 
@@ -288,12 +295,12 @@ const LAYERS = [
     grad: "#f2c14e,#ef7d2d,#d62f4b,#7a1f8e", labels: ["15 m", "30", "60", "90 m+"] },
   { id: "buildings", name: "All buildings", sub: "≥ 6 m above ground", on: false, op: .9, z: 460,
     grad: "#c9c3b8,#f2c14e,#ef7d2d,#d62f4b,#7a1f8e", labels: ["6 m", "15", "30", "60", "90+"] },
-  { id: "water", name: "Water fill", sub: "set in the Water level card", z: 450, isWater: true,
-    grad: "#78d7f5,#2a8fd0,#0a4b8c", labels: ["shallow", "depth", "deep"] },
+  { id: "water", name: "Flood water", sub: "set in the Flood simulation card", z: 450, isWater: true,
+    grad: "#c6e9ff,#79c6f2,#2f8fdc,#1a5cb8,#0b2a6b", labels: ["5 cm", "15", "30", "60", "1 m+"] },
   { id: "ndsm", name: "Height above ground", sub: "buildings and trees", on: false, op: .8, z: 440,
     grad: "#3b2a5c,#8c3c8a,#e0607e,#fff1a8", labels: ["2 m", "10", "20", "40 m+"] },
-  { id: "lowlying", name: "Low-lying areas", sub: "below 1 km neighbourhood average", on: true, op: .55, z: 430,
-    grad: "#9ecae1,#4292c6,#1c5aa6,#0b2f6b", labels: ["2 m", "4", "8", "12 m+"] },
+  { id: "lowlying", name: "Low-lying ground", sub: "terrain below its 1 km surroundings (not water)", on: false, op: .6, z: 430,
+    grad: "#e9d5ff,#c084fc,#9333ea,#581c87", labels: ["2 m", "4", "8", "12 m below"] },
   { id: "lulc", name: "Land use / land cover", sub: "ESA WorldCover 2021 · 10 m", on: false, op: .7, z: 420, isLulc: true,
     grad: "#fa0000,#006400,#f096ff,#ffbb22,#ffff4c,#0064c8", labels: [] },
   { id: "elevation", name: "Bare-earth elevation", sub: "DTM with hillshade", on: false, op: .7, z: 410,
@@ -406,8 +413,8 @@ function renderLayers() {
     BS.mode = b.dataset.v;
     $("msb-mode").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
     const keys = { height: `<div class="ramp" style="background:linear-gradient(90deg,#d9d3c7,#f2c14e,#ef7d2d,#d62f4b,#7a1f8e)"></div><div class="ramp-l"><span>&lt; 6 m</span><span>15</span><span>30</span><span>60</span><span>90 m+</span></div>`,
-      flood: `<div class="lulc-key"><span><i style="background:#1a8fd0"></i>In water (set level above)</span><span><i style="background:#cfc9be"></i>Dry</span></div>`,
-      low: `<div class="lulc-key"><span><i style="background:#2b62c4"></i>On low-lying ground</span><span><i style="background:#cfc9be"></i>Not low-lying</span></div>` };
+      flood: `<div class="lulc-key"><span><i style="background:linear-gradient(90deg,#79c6f2,#0b2a6b)"></i>In water (≥ 15 cm, depth colours)</span><span><i style="background:#cfc9be"></i>Dry</span></div>`,
+      low: `<div class="lulc-key"><span><i style="background:#9333ea"></i>On low-lying ground</span><span><i style="background:#cfc9be"></i>Not low-lying</span></div>` };
     $("msb-key").innerHTML = keys[BS.mode];
     overlays.msb.redraw();
   });
@@ -481,8 +488,8 @@ function computeWater() {
   for (let i = 0, p = 0; i < N; i++, p += 4) {
     const lv = LVL[i];
     if (!lv) { px[p + 3] = 0; continue; }
-    const lake = CLS[i] === 3, t = lake ? 1 : Math.min((lv - DTM[i]) / 3, 1);
-    px[p] = 73 - 63 * t; px[p + 1] = 211 - 132 * t; px[p + 2] = 240 - 102 * t; px[p + 3] = lake ? 200 : 215;
+    const lake = CLS[i] === 3;
+    if (lake) paintLake(px, p); else paintDepth(px, p, lv - DTM[i]);
     if (!lake) { fl++; if (CLS[i] === 2) { fb++; if (SURF[i] - DTM[i] >= 15) fh++; } }
   }
   waterCtx.putImageData(waterImg, 0, 0);
@@ -493,6 +500,21 @@ function computeWater() {
   $("w-busy").hidden = true;
   computeWater.ms = performance.now() - t0;
 }
+
+// ---------- water depth classes (shared by all water views) ----------
+const DEPTH = [
+  [0.05, "#c6e9ff", "5–15 cm", "ankle"], [0.15, "#79c6f2", "15–30 cm", "bikes struggle"], [0.30, "#2f8fdc", "30–60 cm", "cars stall"],
+  [0.60, "#1a5cb8", "60 cm–1 m", "waist deep"], [1.00, "#0b2a6b", "> 1 m", "dangerous"]];
+const DRGB = DEPTH.map((d) => [1, 3, 5].map((k) => parseInt(d[1].slice(k, k + 2), 16)));
+const LAKE_RGB = [111, 156, 151];
+function depthIdx(d) { let k = -1; for (let j = 0; j < DEPTH.length; j++) if (d >= DEPTH[j][0]) k = j; return k; }
+function paintDepth(px, p, d) {
+  const k = depthIdx(d);
+  if (k < 0) { px[p + 3] = 0; return; }
+  const c = DRGB[k]; px[p] = c[0]; px[p + 1] = c[1]; px[p + 2] = c[2]; px[p + 3] = k === 0 ? 170 : 215;
+}
+function paintLake(px, p) { px[p] = LAKE_RGB[0]; px[p + 1] = LAKE_RGB[1]; px[p + 2] = LAKE_RGB[2]; px[p + 3] = 150; }
+$("dkey").innerHTML = DEPTH.map(([, c, lab, note]) => `<div><i style="background:${c}"></i><b>${lab}</b>${note}</div>`).join("");
 
 // ---------- rainfall simulation playback ----------
 async function loadRain() {
@@ -533,25 +555,24 @@ async function computeRain() {
   const t0 = performance.now(), name = rainFrameName();
   const dep = name ? await loadDepth(name) : null;
   if (S.mode !== "rain") return;
-  const W2 = RS.meta.w, H2 = RS.meta.h, step = RS.meta.depth_step_m, px = waterImg.data;
+  const W2 = RS.meta.w, H2 = RS.meta.h, step = RS.meta.depth_step_m, px = waterImg.data, k = Math.max(1, Math.round(W / W2));
   let wet = 0;
   LVL.fill(0);
   for (let r = 0, i = 0; r < H; r++) {
-    const r2 = r >> 1, row = r2 < H2 ? r2 * W2 : -1;
+    const r2 = (r / k) | 0, row = r2 < H2 ? r2 * W2 : -1;
     for (let c = 0; c < W; c++, i++) {
-      const p = i * 4, c2 = c >> 1;
+      const p = i * 4, c2 = (c / k) | 0;
       const dv = dep && row >= 0 && c2 < W2 ? dep[row + c2] * step : 0;
       if (dv >= 0.05) {
-        const t = Math.min(dv / 1.0, 1);
-        px[p] = 120 - 110 * t; px[p + 1] = 215 - 140 * t; px[p + 2] = 245 - 105 * t; px[p + 3] = 120 + 110 * Math.min(dv / 0.3, 1);
-        if (dv >= 0.10) { LVL[i] = DTM[i] + dv; if (CLS[i] !== 3) wet++; }
-      } else if (CLS[i] === 3) { px[p] = 10; px[p + 1] = 79; px[p + 2] = 138; px[p + 3] = 150; }
+        paintDepth(px, p, dv);
+        if (dv >= 0.15) { LVL[i] = DTM[i] + dv; if (CLS[i] !== 3) wet++; }
+      } else if (CLS[i] === 3) paintLake(px, p);
       else px[p + 3] = 0;
     }
   }
   waterCtx.putImageData(waterImg, 0, 0);
   const a = META.res * META.res / 1e6 * Math.pow(Math.cos(13 * Math.PI / 180), 2);
-  $("ws-a").textContent = (wet * a).toFixed(wet * a < 10 ? 2 : 1); $("ws-a-l").textContent = "km² ≥ 10 cm deep";
+  $("ws-a").textContent = (wet * a).toFixed(wet * a < 10 ? 2 : 1); $("ws-a-l").textContent = "km² ≥ 15 cm deep";
   waterBuildingStats();
   drawSpark();
   $("w-busy").hidden = true;
@@ -562,19 +583,20 @@ async function computeRain() {
 function drawSpark() {
   const sc = rainScenario(); if (!sc) return;
   const total = (RS.meta.rain_h + RS.meta.recession_h) * 60, Wd = 320, Hd = 64, top = 6, bot = 52;
-  const ymax = Math.max(...RS.meta.scenarios.map((s2) => s2.max.wet10_km2)) * 1.05;
+  const key = "wet15_km2" in sc.stats[0] ? "wet15_km2" : "wet10_km2";
+  const ymax = Math.max(...RS.meta.scenarios.flatMap((s2) => s2.stats.map((x) => x[key]))) * 1.05;
   const X = (m) => (m / total) * Wd, Y = (v) => bot - (v / ymax) * (bot - top);
-  const pts = [[0, 0], ...sc.stats.map((s2) => [s2.min, s2.wet10_km2])];
+  const pts = [[0, 0], ...sc.stats.map((s2) => [s2.min, s2[key]])];
   const line = pts.map(([m, v], i) => `${i ? "L" : "M"}${X(m).toFixed(1)},${Y(v).toFixed(1)}`).join("");
   const cur = RS.peak ? null : (RS.frame ? sc.frames[RS.frame - 1] : 0);
-  const peakV = Math.max(...sc.stats.map((s2) => s2.wet10_km2));
+  const peakV = Math.max(...sc.stats.map((s2) => s2[key]));
   $("rain-spark").innerHTML =
     `<rect x="0" y="${top}" width="${X(RS.meta.rain_h * 60)}" height="${bot - top}" fill="var(--water)" opacity=".08"/>` +
     `<line x1="0" y1="${bot}" x2="${Wd}" y2="${bot}" stroke="var(--line)"/>` +
     `<path d="${line}L${X(pts[pts.length - 1][0])},${bot}L0,${bot}Z" fill="var(--water)" opacity=".18"/>` +
     `<path d="${line}" fill="none" stroke="var(--water)" stroke-width="1.8" vector-effect="non-scaling-stroke"/>` +
     (cur !== null ? `<line x1="${X(cur)}" y1="${top}" x2="${X(cur)}" y2="${bot}" stroke="var(--fg)" stroke-width="1" stroke-dasharray="2 2" vector-effect="non-scaling-stroke"/>` : "") +
-    `<text x="4" y="${top + 9}">area ≥ 10 cm deep at each moment · highest ${peakV.toFixed(0)} km²</text><text x="4" y="62">rain</text>`;
+    `<text x="4" y="${top + 9}">area ≥ ${key === "wet15_km2" ? 15 : 10} cm deep over time · highest ${peakV.toFixed(0)} km²</text><text x="4" y="62">rain</text>`;
 }
 function syncRainUI() {
   const rain = S.mode === "rain";
@@ -670,10 +692,10 @@ async function loadBuildings() {
 function bColour(k) {
   if (BS.mode === "flood") {
     const c = BLD.cell[k];
-    if (S.on && c >= 0 && LVL && LVL[c] && CLS[c] !== 3) { const d = Math.min((LVL[c] - DTM[c]) / 3, 1); return `rgb(${Math.round(73 - 63 * d)},${Math.round(180 - 100 * d)},${Math.round(240 - 100 * d)})`; }
+    if (S.on && c >= 0 && LVL && LVL[c] && CLS[c] !== 3) { const k = Math.max(0, depthIdx(LVL[c] - DTM[c])); return DEPTH[k][1]; }
     return "rgba(207,201,190,.8)";
   }
-  if (BS.mode === "low") return BLD.flags[k] & 1 ? "rgb(43,98,196)" : "rgba(207,201,190,.8)";
+  if (BS.mode === "low") return BLD.flags[k] & 1 ? "rgb(147,51,234)" : "rgba(207,201,190,.8)";
   return HCOL[Math.min(90, Math.round(BLD.gem_h[k] / 10))];
 }
 const BuildingLayer = L.GridLayer.extend({
